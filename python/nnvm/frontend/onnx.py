@@ -60,9 +60,9 @@ def _pooling(name):
             'kernel_shape': 'pool_size',
             'pads': ('padding', (0, 0), _revert_caffe2_pad)},
         # very weird attributes here in onnx, force check
-        excludes=['dilations'],
+        ignores=['dilations'],
         # TODO(zhreshold): make sure ceil_mode in onnx, and layout?
-        extras={'ceil_mode': True},
+        extras={'ceil_mode': False},
         custom_check=_dimension_constraint())
 
 def _conv():
@@ -90,7 +90,7 @@ def _batch_norm():
     return AttrCvt(
         op_name='batch_norm',
         disables=['momentum'],
-        ignores=['spatial', 'is_test'])
+        ignores=['spatial', 'is_test', 'consumed_inputs'])
 
 
 # compatible operators that do NOT require any conversion.
@@ -100,6 +100,7 @@ _identity_list = []
 _convert_map = {
     # defs/experimental
     'FC'            : AttrCvt('dense', ignores=['axis', 'axis_w']),
+    'SpatialBN'     : _batch_norm(),
 
     # defs/generator
     # 'Constant'
@@ -200,7 +201,7 @@ def _convert_operator(op_name, attrs, identity_list=None, convert_map=None):
     elif op_name in convert_map:
         op_name, attrs = convert_map[op_name](attrs)
     else:
-        _raise_not_supported('Operator: ' + op_name)
+        raise NotImplementedError("Operator {} not implemented.".format(op_name))
     op = getattr(_sym, op_name, None)
     if not op:
         raise RuntimeError("Unable to map op_name {} to nnvm.sym".format(op_name))
