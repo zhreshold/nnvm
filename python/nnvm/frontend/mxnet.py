@@ -310,22 +310,8 @@ def _from_mxnet_impl(symbol, graph):
     else:
         op_name = json.loads(symbol.tojson())['nodes'][0]['op']
         node = _sym.Variable(name=name, **attr)
-    # attr = symbol.list_attr()
-    # new_op, new_attr = _convert_symbol(op_name, attr)
-    # if new_op == _sym.Variable:
-    #     node = new_op(name=name, **new_attr)
-    # else:
-    #     childs = symbol.get_children()
-    #     childs = [_from_mxnet_impl(c, graph) for c in _as_list(childs)]
-    #     childs = [x for y in childs for x in _as_list(y)]  # expand group symbol
-    #     if new_op == _sym.dense and 'flatten' in new_attr:
-    #         if new_attr['flatten']:
-    #             childs[0] = _sym.flatten(childs[0])
-    #         new_attr.pop('flatten')
-    #     node = new_op(name=name, *childs, **new_attr)
     graph[name] = node
     return node
-
 
 def from_mxnet(symbol, arg_params=None, aux_params=None):
     """Convert from MXNet's model into compatible NNVM format.
