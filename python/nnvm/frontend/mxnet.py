@@ -150,13 +150,13 @@ def _leaky_relu(inputs, attrs):
         sym = _get_nnvm_op(op_name)(*inputs, **new_attrs)
     elif act_type == 'elu':
         slope = attrs.get('slope', 0.25)
-        sym = -slope * _sym.relu(1 - _sym.exp(x)) + _sym.relu(x)
+        sym = -slope * _sym.relu(1 - _sym.exp(*inputs)) + _sym.relu(*inputs)
     elif act_type == 'rrelu':
-        lower_bound = _required_attr(attrs, 'lower_bound')
-        upper_bound = _required_attr(attrs, 'upper_bound')
+        lower_bound = float(_required_attr(attrs, 'lower_bound'))
+        upper_bound = float(_required_attr(attrs, 'upper_bound'))
         slope = (lower_bound + upper_bound) / 2.0
-        op_name, new_attrs = 'leaky_relu', {'alpha': slope}
-        sym = _get_nnvm_op(op_name)(*inuts, **new_attrs)
+        op_name, new_attrs = 'leaky_relu', {'alpha': str(slope)}
+        sym = _get_nnvm_op(op_name)(*inputs, **new_attrs)
     else:
         _raise_not_supported('act_type: ' + act_type)
     return sym
@@ -177,7 +177,7 @@ def _reshape(inputs, attrs):
         _raise_not_supported('reverse', 'reshape')
     op_name, new_attrs = 'reshape', {}
     new_attrs['shape'] = _required_attr(attrs, 'shape')
-    return _get_nnvm_op(op_name)(*inuts, **new_attrs)
+    return _get_nnvm_op(op_name)(*inputs, **new_attrs)
 
 def _split(inputs, attrs):
     if _parse_bool_str(attrs, 'squeeze_axis'):
@@ -185,7 +185,7 @@ def _split(inputs, attrs):
     op_name, new_attrs = 'split', {}
     new_attrs['indices_or_sections'] = _required_attr(attrs, 'num_outputs')
     new_attrs['axis'] = attrs.get('axis', 1)
-    return _get_nnvm_op(op_name)(*inuts, **new_attrs)
+    return _get_nnvm_op(op_name)(*inputs, **new_attrs)
 
 _identity_list = ['__add_scalar__', '__add_symbol__', '__div_scalar__',
                   '__div_symbol__', '__mul_scalar__', '__mul_symbol__',
@@ -198,6 +198,12 @@ _identity_list = ['__add_scalar__', '__add_symbol__', '__div_scalar__',
                   'relu', 'sigmoid', 'softmax', 'sum', 'tanh', 'transpose']
 
 _convert_map = {
+    '_div_scalar'   : _rename('__div_scalar__'),
+    '_minus_scalar' : _rename('__sub_scalar__'),
+    '_mul_scalar'   : _rename('__mul_scalar__'),
+    '_plus_scalar'  : _rename('__add_scalar__'),
+    '_rdiv_scalar'  : _rename('__rdiv_scalar__'),
+    '_rminus_scalar': _rename('__rsub_scalar__'),
     'Activation'    : _activations,
     'BatchNorm'     : _batch_norm,
     'BatchNorm_v1'  : _batch_norm,
@@ -300,7 +306,7 @@ def _from_mxnet_impl(symbol, graph):
         op_name = symbol.attr('op_name')
         childs = [_from_mxnet_impl(c, graph) for c in _as_list(childs)]
         childs = [x for y in childs for x in _as_list(y)]  # expand group symbol
-        node = _convert_symbol(op_name, attr, childs)
+        node = _convert_symbol(op_name, childs, attr)
     else:
         op_name = json.loads(symbol.tojson())['nodes'][0]['op']
         node = _sym.Variable(name=name, **attr)
