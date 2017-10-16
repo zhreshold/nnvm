@@ -88,7 +88,7 @@ def test_forward_fc_flatten():
         verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 100))
         mx_sym = mx.sym.FullyConnected(mx.sym.Flatten(data), num_hidden=100, flatten=False)
         verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 100))
-    except TypeError:
+    except:
         pass
 
 if __name__ == '__main__':
