@@ -62,7 +62,37 @@ def test_forward_resnet():
         mx_sym = model_zoo.mx_resnet[n]
         verify_mxnet_frontend_impl(mx_sym)
 
+def test_forward_elu():
+    data = mx.sym.var('data')
+    mx_sym = mx.sym.LeakyReLU(data, act_type='elu')
+    verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 3, 100, 100))
+
+def test_forward_rrelu():
+    data = mx.sym.var('data')
+    mx_sym = mx.sym.LeakyReLU(data, act_type='rrelu', lower_bound=0.3, upper_bound=0.7)
+    verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 3, 100, 100))
+
+def test_forward_softrelu():
+    data = mx.sym.var('data')
+    mx_sym = mx.sym.Activation(data, act_type='softrelu')
+    verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 3, 100, 100))
+
+def test_forward_fc_flatten():
+    # test flatten=True option in mxnet 0.11.1
+    data = mx.sym.var('data')
+    try:
+        mx_sym = mx.sym.FullyConnected(data, num_hidden=100, flatten=True)
+        verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 3 * 100 * 100))
+        mx_sym = mx.sym.FullyConnected(mx.sym.Flatten(data), num_hidden=100, flatten=False)
+        verify_mxnet_frontend_impl(mx_sym, (1, 3, 100, 100), (1, 3 * 100 * 100))
+    except TypeError:
+        pass
+
 if __name__ == '__main__':
     test_forward_mlp()
     test_forward_vgg()
     test_forward_resnet()
+    test_forward_elu()
+    test_forward_rrelu()
+    test_forward_softrelu()
+    test_forward_fc_flatten()
