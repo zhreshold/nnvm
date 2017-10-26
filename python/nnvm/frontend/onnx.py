@@ -5,7 +5,7 @@ import tvm
 from .. import symbol as _sym
 from .. import graph as _graph
 from .. compiler import graph_util
-from .common import Renamer, AttrConverter as AttrCvt
+from .common import get_nnvm_op, Renamer, AttrConverter as AttrCvt
 
 __all__ = ['from_onnx']
 
@@ -49,11 +49,36 @@ def _dimension_constraint():
         return False
     return _dim_check, "Only 2d kernel supported."
 
+def _infer_channels(self, inputs, nodes, params, renames):
+    """A hack for getting 'channles' or 'units' since onnx don't provide
+    these attributes. We check the shape of weights provided to get the number.
+    """
+    if inputs not in renames:
+        assert inputs in nodes
+        g = _graph.create(nodes[inputs])
+        shape_dict = {k: v.shape for k, v in params.items()}
+        _, out_shapes = graph_util.infer_shape(g, **shape_dict)
+        channels = out_shapes[0][0]
+    else:
+        weight_name = renames[inputs]
+        if not weight_name in params:
+            raise ValueError("Unable to get channels/units attr from onnx graph.")
+        else:
+            wshape = params[weight_name].shape
+            assert len(wshape) >= 2, "Weights shape is invalid: {}".format(wshape)
+            channels = wshape[0]
+    return channels
+
 def _elemwise(name):
-    return AttrCvt(
-        op_name=_math_name_picker(name),
-        disables=['axis'],
-        ignores=['broadcast'])
+    def _impl(inputs, attr, *args):
+        assert len(inputs) == 2, "Math op take 2 inputs, {} given".format(len(inputs))
+        op_name = _math_name_picker(name)
+        axis = int(attr.get('axis', 0))
+        if axis > 0:
+            new_shape = (1,) * axis + (-1,)
+            inputs[1] = _sym.reshape(inputs[1], shape=new_shape)
+        return get_nnvm_op(op_name)(**inputs)
+    return _impl
 
 def _pooling(name):
     return AttrCvt(
@@ -68,24 +93,44 @@ def _pooling(name):
         custom_check=_dimension_constraint())
 
 def _conv():
-    return AttrCvt(
-        op_name=_dimension_picker('conv'),
-        transforms={
-            'kernel_shape': 'kernel_size',
-            'dilations': ('dilation', (0, 0)),
-            'pads': ('padding', (0, 0), _revert_caffe2_pad),
-            'group': ('groups', 1)},
-        custom_check=_dimension_constraint())
+    def _impl(inputs, attr, nodes, params, renames):
+        # get number of channels
+        channels = _infer_channels(inputs[1], nodes, params, renames)
+        attr['channels'] = channels
+        return AttrCvt(
+            op_name=_dimension_picker('conv'),
+            transforms={
+                'kernel_shape': 'kernel_size',
+                'dilations': ('dilation', (0, 0)),
+                'pads': ('padding', (0, 0), _revert_caffe2_pad),
+                'group': ('groups', 1)},
+            extras={'use_bias': False},
+            custom_check=_dimension_constraint())(inputs, attr)
+    return _impl
 
 def _conv_transpose():
-    return AttrCvt(
-        op_name=_dimension_picker('conv', '_transpose'),
-        transforms={
-            'kernel_shape': 'kernel_size',
-            'dilations': ('dilation', (0, 0)),
-            'pads': ('padding', (0, 0), _revert_caffe2_pad)},
-        disables=['output_shape'],
-        custom_check=_dimension_constraint())
+    def _impl(inputs, attr, nodes, params, renames):
+        # get number of channels
+        channels = _infer_channels(inputs[1], nodes, params, renames)
+        attr['channels'] = channels
+        return AttrCvt(
+            op_name=_dimension_picker('conv', '_transpose'),
+            transforms={
+                'kernel_shape': 'kernel_size',
+                'dilations': ('dilation', (0, 0)),
+                'pads': ('padding', (0, 0), _revert_caffe2_pad)},
+            disables=['output_shape'],
+            extras={'use_bias': False},
+            custom_check=_dimension_constraint())(inputs, attr)
+    return _impl
+
+def _fully_connected():
+    def _impl(inputs, attr, nodes, params, renames):
+        # get number of channels
+        channels = _infer_channels(inputs[1], nodes, params, renames)
+        attr['units'] = channels
+        return AttrCvt('dense', ignores=['axis', 'axis_w'])(inputs, attr)
+    return _impl
 
 def _batch_norm():
     # TODO(zhreshold): 'spatial' is not properly handled here.
@@ -95,10 +140,32 @@ def _batch_norm():
         ignores=['spatial', 'is_test', 'consumed_inputs'])
 
 
+def _gemm():
+    def _impl(inputs, attr, nodes, params, renames):
+        assert len(inputs) == 3, "Gemm op take 3 inputs, {} given".format(len(inputs))
+        # get number of channels
+        channels = _infer_channels(inputs[1], nodes, params, renames)
+        # Y = alpha * A * B + beta * C
+        alpha = float(attr['alpha'])
+        beta = float(attr['beta'])
+        transA = int(attr['transA'])
+        transB = int(attr['transB'])
+        if transA:
+            inputs[0] = _sym.transpose(inputs[0], axes=(1, 0))
+        if transB:
+            inputs[1] = _sym.transpose(inputs[1], axes=(1, 0))
+        return _sym.dense(alpha * inputs[0], inputs[1], beta * inputs[2], units=channels)
+    return _impl
+
+
 # compatible operators that do NOT require any conversion.
 _identity_list = []
 
 # _convert_map defines maps of name to converter functor(callable)
+# for 1 to 1 mapping, use Renamer if nothing but name is different
+# use AttrCvt if attributes need to be converted
+# for 1 to N mapping(composed), use custom callable functions
+# for N to 1 mapping, currently not supported(?)
 _convert_map = {
     # defs/experimental
     'FC'            : AttrCvt('dense', ignores=['axis', 'axis_w']),
@@ -140,6 +207,7 @@ _convert_map = {
     # 'Sum' : elemwise sum
     # softmax default axis is different in onnx
     'Softmax'       : AttrCvt('softmax', {'axis': ('axis', 1)}),
+    'Gemm'          : _gemm(),
 
     # defs/nn
     'AveragePool'   : _pooling('avg_pool'),
@@ -151,6 +219,7 @@ _convert_map = {
     'BatchNormalization': _batch_norm(),
     'Dropout'       : AttrCvt('dropout', {'ratio': 'rate'}, ignores=['is_test']),
     'Flatten'       : Renamer('flatten'),
+    # 'LRN'
 
     # defs/reduction
     'ReduceMax'     : AttrCvt('max', {'axes', 'axis'}),
@@ -172,42 +241,6 @@ _convert_map = {
     # 'Gather'
     # 'Squeeze'
 }
-
-def _convert_operator(op_name, attrs, identity_list=None, convert_map=None):
-    """Convert from onnx operator to nnvm operator.
-    The converter must specify conversions explicity for incompatible name, and
-    apply handlers to operator attributes.
-
-    Parameters
-    ----------
-    op_name : str
-        Operator name, such as Convolution, FullyConnected
-    attrs : dict
-        Dict of operator attributes
-    identity_list : list
-        List of operators that don't require conversion
-    convert_map : dict
-        Dict of name : callable, where name is the op's name that
-        require conversion to nnvm, callable are functions which
-        take attrs and return (new_op_name, new_attrs)
-
-    Returns
-    -------
-    (op_name, attrs)
-        Converted (op_name, attrs) for nnvm.
-    """
-    identity_list = identity_list if identity_list else _identity_list
-    convert_map = convert_map if convert_map else _convert_map
-    if op_name in identity_list:
-        pass
-    elif op_name in convert_map:
-        op_name, attrs = convert_map[op_name](attrs)
-    else:
-        raise NotImplementedError("Operator {} not implemented.".format(op_name))
-    op = getattr(_sym, op_name, None)
-    if not op:
-        raise RuntimeError("Unable to map op_name {} to nnvm.sym".format(op_name))
-    return op, attrs
 
 
 class GraphProto(object):
@@ -269,13 +302,14 @@ class GraphProto(object):
             node_name = node.name.strip()
             node_name = node_name if node_name else None
             attr = self._parse_attr(node.attribute)
-            new_op, new_attr = _convert_operator(op_name, attr)
+            # new_op, new_attr = _convert_operator(op_name, attr)
             inputs = [self._nodes[self._renames.get(i, i)] for i in node.input]
+            op = self._convert_operator(inputs, attr)
             # some hacks for onnx problem
-            new_attr = self._fix_bias(new_op, new_attr, len(inputs))
-            new_attr = self._fix_channels(new_op, new_attr, list(node.input))
-            self._fix_bias_shape(node.op_type, graph.node[idx-1].op_type, node.input)
-            op = new_op(name=node_name, *inputs, **new_attr)
+            # new_attr = self._fix_bias(new_op, new_attr, len(inputs))
+            # new_attr = self._fix_channels(new_op, new_attr, list(node.input))
+            # self._fix_bias_shape(node.op_type, graph.node[idx-1].op_type, node.input)
+            # op = new_op(name=node_name, *inputs, **new_attr)
             node_output = self._fix_outputs(op_name, node.output)
             assert len(node_output) == len(op.list_output_names()), (
                 "Number of output mismatch {} vs {} in {}.".format(
@@ -320,64 +354,101 @@ class GraphProto(object):
                 raise ValueError("Cannot parse attribute: \n{}\n.".format(a))
         return attrs
 
-    def _fix_outputs(self, op, outputs):
+    def _convert_operator(self, op_name, inputs, attrs, identity_list=None, convert_map=None):
+        """Convert from onnx operator to nnvm operator.
+        The converter must specify conversions explicity for incompatible name, and
+        apply handlers to operator attributes.
+
+        Parameters
+        ----------
+        op_name : str
+            Operator name, such as Convolution, FullyConnected
+        inputs : list of nnvm.Symbol
+            List of input symbols.
+        attrs : dict
+            Dict of operator attributes
+        identity_list : list
+            List of operators that don't require conversion
+        convert_map : dict
+            Dict of name : callable, where name is the op's name that
+            require conversion to nnvm, callable are functions which
+            take attrs and return (new_op_name, new_attrs)
+
+        Returns
+        -------
+        sym : nnvm.Symbol
+            Converted nnvm Symbol
+        """
+        identity_list = identity_list if identity_list else _identity_list
+        convert_map = convert_map if convert_map else _convert_map
+        if op_name in identity_list:
+            sym = get_nnvm_op(op_name)(*inputs, **attrs)
+        elif op_name in convert_map:
+            sym = convert_map[op_name](inputs, attrs, self._nodes, self._params, self._renames)
+        else:
+            raise NotImplementedError("Operator {} not implemented.".format(op_name))
+        return sym
+
+    def _fix_outputs(self, op_name, outputs):
         """A hack to handle dropout or similar operator that have more than one out
         in ONNX.
         """
-        if op == 'Dropout':
-            assert len(outputs) == 2, "ONNX have two outputs for dropout layer."
+        if op_name == 'Dropout':
+            if len(outputs) == 1:
+                return outputs
+            # TODO(zhreshold): support dropout mask?
             outputs = outputs[:-1]
         return outputs
 
-    def _fix_bias(self, op, attrs, num_inputs):
-        """A hack for 'use_bias' attribute since onnx don't provide this attribute,
-        we have to check the number of inputs to decide it."""
-        if op not in [_sym.conv2d, _sym.conv2d_transpose, _sym.dense]:
-            return attrs
-        if num_inputs == 3:
-            attrs['use_bias'] = True
-        elif num_inputs == 2:
-            attrs['use_bias'] = False
-        else:
-            raise ValueError("Unexpected number of inputs for: {}".format(op))
-        return attrs
+    # def _fix_bias(self, op, attrs, num_inputs):
+    #     """A hack for 'use_bias' attribute since onnx don't provide this attribute,
+    #     we have to check the number of inputs to decide it."""
+    #     if op not in [_sym.conv2d, _sym.conv2d_transpose, _sym.dense]:
+    #         return attrs
+    #     if num_inputs == 3:
+    #         attrs['use_bias'] = True
+    #     elif num_inputs == 2:
+    #         attrs['use_bias'] = False
+    #     else:
+    #         raise ValueError("Unexpected number of inputs for: {}".format(op))
+    #     return attrs
 
-    def _fix_bias_shape(self, op_name, last_op_name, inputs):
-        """A hack to reshape bias term to (1, num_channel)."""
-        if op_name == 'Add' and last_op_name == 'Conv':
-            assert len(list(inputs)) == 2
-            bias_name = self._renames.get(inputs[1], inputs[1])
-            bias = self._params[bias_name]
-            assert len(bias.shape) == 1
-            # reshape to (1, n)
-            bias = tvm.nd.array(bias.asnumpy().reshape((1, -1, 1, 1)))
-            self._params[bias_name] = bias
+    # def _fix_bias_shape(self, op_name, last_op_name, inputs):
+    #     """A hack to reshape bias term to (1, num_channel)."""
+    #     if op_name == 'Add' and last_op_name == 'Conv':
+    #         assert len(list(inputs)) == 2
+    #         bias_name = self._renames.get(inputs[1], inputs[1])
+    #         bias = self._params[bias_name]
+    #         assert len(bias.shape) == 1
+    #         # reshape to (1, n)
+    #         bias = tvm.nd.array(bias.asnumpy().reshape((1, -1, 1, 1)))
+    #         self._params[bias_name] = bias
 
-    def _fix_channels(self, op, attrs, inputs):
-        """A hack for getting 'channles' or 'units' since onnx don't provide
-        these attributes. We check the shape of weights provided to get the number.
-        """
-        if op not in [_sym.conv2d, _sym.conv2d_transpose, _sym.dense]:
-            return attrs
-        if inputs[1] not in self._renames:
-            assert inputs[1] in self._nodes
-            g = _graph.create(self._nodes[inputs[1]])
-            shape_dict = {k: v.shape for k, v in self._params.items()}
-            _, out_shapes = graph_util.infer_shape(g, **shape_dict)
-            channels = out_shapes[0][0]
-        else:
-            weight_name = self._renames[inputs[1]]
-            if not weight_name in self._params:
-                raise ValueError("Unable to get channels/units attr from onnx graph.")
-            else:
-                wshape = self._params[weight_name].shape
-                assert len(wshape) >= 2, "Weights shape is invalid: {}".format(wshape)
-                channels = wshape[0]
-        if op in [_sym.dense]:
-            attrs['units'] = channels
-        else:
-            attrs['channels'] = channels
-        return attrs
+    # def _fix_channels(self, op, attrs, inputs):
+    #     """A hack for getting 'channles' or 'units' since onnx don't provide
+    #     these attributes. We check the shape of weights provided to get the number.
+    #     """
+    #     if op not in [_sym.conv2d, _sym.conv2d_transpose, _sym.dense]:
+    #         return attrs
+    #     if inputs[1] not in self._renames:
+    #         assert inputs[1] in self._nodes
+    #         g = _graph.create(self._nodes[inputs[1]])
+    #         shape_dict = {k: v.shape for k, v in self._params.items()}
+    #         _, out_shapes = graph_util.infer_shape(g, **shape_dict)
+    #         channels = out_shapes[0][0]
+    #     else:
+    #         weight_name = self._renames[inputs[1]]
+    #         if not weight_name in self._params:
+    #             raise ValueError("Unable to get channels/units attr from onnx graph.")
+    #         else:
+    #             wshape = self._params[weight_name].shape
+    #             assert len(wshape) >= 2, "Weights shape is invalid: {}".format(wshape)
+    #             channels = wshape[0]
+    #     if op in [_sym.dense]:
+    #         attrs['units'] = channels
+    #     else:
+    #         attrs['channels'] = channels
+    #     return attrs
 
 def from_onnx(graph):
     """Load onnx graph which is a python protobuf object in to nnvm graph.
@@ -389,7 +460,7 @@ def from_onnx(graph):
     Parameters
     ----------
     graph : protobuf object
-        ONNX graph
+        ONNX GraphProto, or ONNX ModelProto after ONNX v0.2
 
     Returns
     -------
@@ -400,5 +471,8 @@ def from_onnx(graph):
         Dict of converted parameters stored in tvm.ndarray format
     """
     g = GraphProto()
+    if hasattr(graph, 'graph'):
+        # it's a ModelProto wrapper
+        graph = graph.graph
     sym, params = g.from_onnx(graph)
     return sym, params
