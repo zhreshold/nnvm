@@ -10,20 +10,6 @@ def get_nnvm_op(op_name):
         raise RuntimeError("Unable to map op_name {} to nnvm.sym".format(op_name))
     return op
 
-class DuplicateFilter(logging.Filter):
-    def __init__(self):
-        super(DuplicateFilter, self).__init__()
-        self._records = {}
-
-    def filter(self, record):
-        msg = record.getMessage()
-        if msg in self._records:
-            return False
-        self._records[msg] = 1
-        return True
-logging.getLogger().addFilter(DuplicateFilter())
-
-
 class Renamer(object):
     """A simply renamer for operators.
 
