@@ -4,7 +4,7 @@ import tvm
 from tvm.contrib import graph_runtime
 from nnvm.testing.config import ctx_list
 import onnx
-from model_zoo import super_resolution, squeezenet1_1
+from model_zoo import super_resolution, squeezenet1_1, vgg11
 
 def verify_onnx_forward_impl(graph_file, data_shape, out_shape):
     import onnx_caffe2.backend
@@ -40,6 +40,9 @@ def verify_super_resolution_example():
 
 def verify_squeezenet1_1():
     verify_onnx_forward_impl(squeezenet1_1[0], (1, 3, 224, 224), (1000,))
+
+def verify_vgg11():
+    verify_onnx_forward_impl(vgg11[0], (1, 3, 224, 224), (1000,))
 
 if __name__ == '__main__':
     verify_super_resolution_example()
