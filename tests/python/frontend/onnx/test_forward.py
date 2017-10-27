@@ -39,10 +39,12 @@ def verify_super_resolution_example():
     verify_onnx_forward_impl(super_resolution[0], (1, 1, 224, 224), (1, 1, 672, 672))
 
 def verify_squeezenet1_1():
-    verify_onnx_forward_impl(squeezenet1_1[0], (1, 3, 224, 224), (1000,))
+    verify_onnx_forward_impl(squeezenet1_1[0], (1, 3, 224, 224), (1, 1000))
 
 def verify_vgg11():
-    verify_onnx_forward_impl(vgg11[0], (1, 3, 224, 224), (1000,))
+    verify_onnx_forward_impl(vgg11[0], (1, 3, 224, 224), (1, 1000))
 
 if __name__ == '__main__':
     verify_super_resolution_example()
+    verify_squeezenet1_1()
+    verify_vgg11()
