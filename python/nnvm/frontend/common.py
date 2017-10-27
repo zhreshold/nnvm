@@ -1,8 +1,8 @@
 """Shared functions and classes for frontends."""
 from __future__ import absolute_import as _abs
 import logging
-from .._base import string_types
 from nnvm import sym as _sym
+from .._base import string_types
 
 def get_nnvm_op(op_name):
     op = getattr(_sym, op_name)
@@ -12,6 +12,7 @@ def get_nnvm_op(op_name):
 
 class DuplicateFilter(logging.Filter):
     def __init__(self):
+        super(DuplicateFilter, self).__init__()
         self._records = {}
 
     def filter(self, record):
@@ -99,9 +100,9 @@ class AttrConverter(object):
             if k in self._excludes:
                 raise NotImplementedError("Attribute {} not supported yet.".format(k))
             elif k in self._disables:
-                logging.warning("Attribute {} is disabled in nnvm.sym.{}".format(k, op_name))
+                logging.warning("Attribute %s is disabled in nnvm.sym.%s", k, op_name)
             elif k in self._ignores:
-                logging.debug("Attribute {} is ignored in nnvm.sym.{}".format(k, op_name))
+                logging.debug("Attribute %s is ignored in nnvm.sym.%s", k, op_name)
             elif k in self._transforms:
                 new_name, defaults, transform = self._parse_default(self._transforms[k])
                 if defaults is None:

@@ -1,4 +1,4 @@
-# pylint: disable=import-self, invalid-name
+# pylint: disable=import-self, invalid-name, unused-argument
 """ONNX: Open Neural Network Exchange frontend."""
 from __future__ import absolute_import as _abs
 import tvm
@@ -49,7 +49,7 @@ def _dimension_constraint():
         return False
     return _dim_check, "Only 2d kernel supported."
 
-def _infer_channels(inputs, nodes, params, renames):
+def _infer_channels(inputs, params):
     """A hack for getting 'channles' or 'units' since onnx don't provide
     these attributes. We check the shape of weights provided to get the number.
     """
@@ -87,9 +87,9 @@ def _pooling(name):
         custom_check=_dimension_constraint())
 
 def _conv():
-    def _impl(inputs, attr, nodes, params, renames):
+    def _impl(inputs, attr, params):
         # get number of channels
-        channels = _infer_channels(inputs[1], nodes, params, renames)
+        channels = _infer_channels(inputs[1], params)
         attr['channels'] = channels
         return AttrCvt(
             op_name=_dimension_picker('conv'),
@@ -103,9 +103,9 @@ def _conv():
     return _impl
 
 def _conv_transpose():
-    def _impl(inputs, attr, nodes, params, renames):
+    def _impl(inputs, attr, params):
         # get number of channels
-        channels = _infer_channels(inputs[1], nodes, params, renames)
+        channels = _infer_channels(inputs[1], params)
         attr['channels'] = channels
         return AttrCvt(
             op_name=_dimension_picker('conv', '_transpose'),
@@ -119,9 +119,9 @@ def _conv_transpose():
     return _impl
 
 def _fully_connected():
-    def _impl(inputs, attr, nodes, params, renames):
+    def _impl(inputs, attr, params):
         # get number of channels
-        channels = _infer_channels(inputs[1], nodes, params, renames)
+        channels = _infer_channels(inputs[1], params)
         attr['units'] = channels
         return AttrCvt('dense', ignores=['axis', 'axis_w'])(inputs, attr)
     return _impl
@@ -135,10 +135,10 @@ def _batch_norm():
 
 
 def _gemm():
-    def _impl(inputs, attr, nodes, params, renames):
+    def _impl(inputs, attr, params):
         assert len(inputs) == 3, "Gemm op take 3 inputs, {} given".format(len(inputs))
         # get number of channels
-        channels = _infer_channels(inputs[1], nodes, params, renames)
+        channels = _infer_channels(inputs[1], params)
         # Y = alpha * A * B + beta * C
         alpha = float(attr.get('alpha', 1.0))
         beta = float(attr.get('beta', 1.0))
@@ -289,7 +289,7 @@ class GraphProto(object):
                 self._nodes[name_input] = _sym.Variable(name=name_input)
                 self._renames[i_name] = name_input
         # construct nodes, nodes are stored as directed acyclic graph
-        for idx, node in enumerate(graph.node):
+        for node in graph.node:
             op_name = node.op_type
             attr = self._parse_attr(node.attribute)
             inputs = [self._nodes[self._renames.get(i, i)] for i in node.input]
@@ -376,7 +376,7 @@ class GraphProto(object):
         if op_name in identity_list:
             sym = get_nnvm_op(op_name)(*inputs, **attrs)
         elif op_name in convert_map:
-            sym = convert_map[op_name](inputs, attrs, self._nodes, self._params, self._renames)
+            sym = convert_map[op_name](inputs, attrs, self._params)
         else:
             raise NotImplementedError("Operator {} not implemented.".format(op_name))
         return sym
