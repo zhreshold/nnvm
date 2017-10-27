@@ -65,7 +65,11 @@ def _elemwise(name):
         op_name = _math_name_picker(name)(attr)
         axis = int(attr.get('axis', 0))
         if axis > 0:
-            new_shape = (1,) * axis + (-1,)
+            # TODO(zhreshold): remove hard coded infershape
+            assert axis == 1, (
+                "This is a temporary check which requires broadcasting at dim 1. "
+                "This do not hold if inputs is not 4D.")
+            new_shape = (1,) * axis + (-1,) + (1, 1)
             inputs[1] = _sym.reshape(inputs[1], shape=new_shape)
         return get_nnvm_op(op_name)(*inputs)
     return _impl
