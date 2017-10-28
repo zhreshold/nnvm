@@ -39,7 +39,7 @@ def download(url, path, overwrite=False):
 # http://pytorch.org/tutorials/advanced/super_resolution_with_caffe2.html
 # we skip the pytorch model construction part, and download the saved onnx model
 model_url = ''.join(['https://gist.github.com/zhreshold/',
-                     'bcda4716699ac97ea44f791c24310193/raw',
+                     'bcda4716699ac97ea44f791c24310193/raw/',
                      '93672b029103648953c4e5ad3ac3aadf346a4cdc/',
                      'super_resolution_0.2.onnx'])
 download(model_url, 'super_resolution.onnx')
