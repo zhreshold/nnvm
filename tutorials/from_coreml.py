@@ -21,6 +21,7 @@ import numpy as np
 from PIL import Image
 
 def download(url, path, overwrite=False):
+    import os
     if os.path.isfile(path) and not overwrite:
         print('File {} existed, skip.'.format(path))
         return

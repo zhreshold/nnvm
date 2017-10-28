@@ -20,6 +20,7 @@ import onnx
 import numpy as np
 
 def download(url, path, overwrite=False):
+    import os
     if os.path.isfile(path) and not overwrite:
         print('File {} existed, skip.'.format(path))
         return
@@ -38,9 +39,9 @@ def download(url, path, overwrite=False):
 # http://pytorch.org/tutorials/advanced/super_resolution_with_caffe2.html
 # we skip the pytorch model construction part, and download the saved onnx model
 model_url = ''.join(['https://gist.github.com/zhreshold/',
-                     'bcda4716699ac97ea44f791c24310193/raw/',
-                     '41b443bf2b6cf795892d98edd28bacecd8eb0d8d/',
-                     'super_resolution.onnx'])
+                     'bcda4716699ac97ea44f791c24310193/raw',
+                     '93672b029103648953c4e5ad3ac3aadf346a4cdc/',
+                     'super_resolution_0.2.onnx'])
 download(model_url, 'super_resolution.onnx')
 # now you have super_resolution.onnx on disk
 onnx_graph = onnx.load('super_resolution.onnx')
