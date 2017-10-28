@@ -49,14 +49,14 @@ def _dimension_constraint():
         return False
     return _dim_check, "Only 2d kernel supported."
 
-def _infer_channels(inputs, params):
+def _infer_channels(inputs, params, transpose=False):
     """A hack for getting 'channles' or 'units' since onnx don't provide
     these attributes. We check the shape of weights provided to get the number.
     """
     g = _graph.create(inputs)
     shape_dict = {k: v.shape for k, v in params.items()}
     _, out_shapes = graph_util.infer_shape(g, **shape_dict)
-    channels = out_shapes[0][0]
+    channels = out_shapes[0][0] if not transpose else out_shapes[0][1]
     return channels
 
 def _elemwise(name):
@@ -64,13 +64,9 @@ def _elemwise(name):
         assert len(inputs) == 2, "Math op take 2 inputs, {} given".format(len(inputs))
         op_name = _math_name_picker(name)(attr)
         axis = int(attr.get('axis', 0))
-        if axis > 0:
+        if op_name == 'broadcast_add' and inputs[0].attr('op_name') == 'conv2d':
             # TODO(zhreshold): remove hard coded infershape
-            assert axis == 1, (
-                "This is a temporary check which requires broadcasting at dim 1. "
-                "This do not hold if inputs is not 4D.")
-            new_shape = (1,) * axis + (-1,) + (1, 1)
-            inputs[1] = _sym.reshape(inputs[1], shape=new_shape)
+            inputs[1] = _sym.expand_dims(inputs[1], axis=axis, num_newaxis=2)
         return get_nnvm_op(op_name)(*inputs)
     return _impl
 
@@ -137,16 +133,16 @@ def _batch_norm():
 def _gemm():
     def _impl(inputs, attr, params):
         assert len(inputs) == 3, "Gemm op take 3 inputs, {} given".format(len(inputs))
-        # get number of channels
-        channels = _infer_channels(inputs[1], params)
         # Y = alpha * A * B + beta * C
         alpha = float(attr.get('alpha', 1.0))
         beta = float(attr.get('beta', 1.0))
         transA = int(attr.get('transA', 0))
         transB = int(attr.get('transB', 0))
+        # get number of channels
+        channels = _infer_channels(inputs[1], params, not transB)
         if transA:
             inputs[0] = _sym.transpose(inputs[0], axes=(1, 0))
-        if transB:
+        if not transB:
             inputs[1] = _sym.transpose(inputs[1], axes=(1, 0))
         return _sym.dense(alpha * inputs[0], inputs[1], beta * inputs[2], units=channels)
     return _impl

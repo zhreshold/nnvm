@@ -2,7 +2,7 @@
 import nnvm
 import onnx
 from nnvm.compiler import graph_util, graph_attr
-from model_zoo import super_resolution
+from model_zoo import super_resolution, super_resolution_sym
 
 def compare_graph(onnx_file, nnvm_sym, ishape):
     onnx_graph = onnx.load(onnx_file)
@@ -17,7 +17,7 @@ def compare_graph(onnx_file, nnvm_sym, ishape):
     graph_util.check_graph_equal(g1, g2)
 
 def test_super_resolution_example():
-    fname, symbol = super_resolution
+    fname, symbol = super_resolution, super_resolution_sym
     compare_graph(fname, symbol, ishape=(1, 1, 224, 224))
 
 if __name__ == '__main__':
