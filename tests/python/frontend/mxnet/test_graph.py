@@ -32,6 +32,17 @@ def test_resnet():
         nnvm_sym = model_zoo.nnvm_resnet[n]
         compare_graph(from_mx_sym, nnvm_sym)
 
+def test_multi_outputs():
+    def compose(F):
+        x = F.sym.Variable('x')
+        y = F.sym.Variable('y')
+        z = F.sym.split(x, num_outputs=4)
+        return z[0] + z[3] + y
+    mx_sym = compose(mx)
+    from_mx_sym, _ = nnvm.frontend.from_mxnet(mx_sym)
+    nnvm_sym = compose(nnvm)
+    compare_graph(from_mx_sym, nnvm_sym)
+
 if __name__ == '__main__':
     test_mlp()
     test_vgg()
