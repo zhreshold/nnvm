@@ -298,11 +298,11 @@ def _from_mxnet_impl(symbol, graph):
         return [_from_mxnet_impl(s, graph) for s in symbol]
 
     name = symbol.attr('name')
-    out_names = symbol.list_outputs()
-    assert len(out_names) == 1, "Grouped outputs not valid here."
-    node = graph.get(name, None)
+    out_name = symbol.list_outputs()
+    assert len(out_name) == 1, "Grouped outputs not valid here."
+    node, out_names = graph.get(name, None)
     if node:
-        node = node[node.list_outputs().index(out_names[0])]  # for multi-outputs
+        node = node[out_names.index(out_name[0])]  # for multi-outputs
         return node
     attr = symbol.list_attr()
     # op_name = symbol.attr('op_name')
@@ -315,7 +315,7 @@ def _from_mxnet_impl(symbol, graph):
     else:
         op_name = json.loads(symbol.tojson())['nodes'][0]['op']
         node = _sym.Variable(name=name, **attr)
-    graph[name] = node
+    graph[name] = (node, symbol.list_outputs())
     return node
 
 def from_mxnet(symbol, arg_params=None, aux_params=None):
