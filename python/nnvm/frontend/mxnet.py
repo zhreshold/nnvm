@@ -222,6 +222,8 @@ _convert_map = {
     'Pooling'       : _pooling,
     'Pooling_v1'    : _pooling,
     'Reshape'       : _reshape,
+    'SliceChannel'  : _split,
+    'split'         : _split,
     'Softmax'       : _rename('softmax'),
     'SoftmaxOutput' : _softmax_output,
     'concat'        : _concat,

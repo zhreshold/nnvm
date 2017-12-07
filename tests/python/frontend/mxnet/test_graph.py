@@ -36,8 +36,8 @@ def test_multi_outputs():
     def compose(F):
         x = F.sym.Variable('x')
         y = F.sym.Variable('y')
-        z = F.sym.split(x, num_outputs=4)
-        return z[0] + z[3] + y
+        z = F.sym.split(x, num_outputs=3)
+        return z[0] + z[2] + y
     mx_sym = compose(mx)
     from_mx_sym, _ = nnvm.frontend.from_mxnet(mx_sym)
     nnvm_sym = compose(nnvm)
@@ -47,3 +47,4 @@ if __name__ == '__main__':
     test_mlp()
     test_vgg()
     test_resnet()
+    test_multi_outputs()
