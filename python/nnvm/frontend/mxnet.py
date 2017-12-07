@@ -300,9 +300,9 @@ def _from_mxnet_impl(symbol, graph):
     name = symbol.attr('name')
     out_name = symbol.list_outputs()
     assert len(out_name) == 1, "Grouped outputs not valid here."
-    node, out_names = graph.get(name, None)
-    if node:
-        node = node[out_names.index(out_name[0])]  # for multi-outputs
+    node_tuple = graph.get(name, None)
+    if node_tuple:
+        node = node_tuple[0][node_tuple[1].index(out_name[0])]  # for multi-outputs
         return node
     attr = symbol.list_attr()
     # op_name = symbol.attr('op_name')
