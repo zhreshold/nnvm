@@ -38,9 +38,9 @@ def test_multi_outputs():
         y = F.sym.Variable('y')
         z = F.sym.split(x, **kwargs)
         return z[0] + z[2] + y
-    mx_sym = compose(mx, num_outputs=3)
+    mx_sym = compose(mx, num_outputs=3, axis=1)
     from_mx_sym, _ = nnvm.frontend.from_mxnet(mx_sym)
-    nnvm_sym = compose(nnvm, indices_or_sections=3)
+    nnvm_sym = compose(nnvm, indices_or_sections=3, axis=1)
     compare_graph(from_mx_sym, nnvm_sym)
 
 if __name__ == '__main__':
