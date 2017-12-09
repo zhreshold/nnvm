@@ -298,7 +298,7 @@ def _from_mxnet_impl(symbol, graph):
         return [_from_mxnet_impl(s, graph) for s in symbol]
 
     name = symbol.attr('name')
-    output_index = int(symbol.attr('output_index'))
+    output_index = json.loads(symbol.tojson())['heads'][0][1]
     node = graph.get(name, None)
     if node:
         return node[output_index]
