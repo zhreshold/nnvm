@@ -33,14 +33,14 @@ def test_resnet():
         compare_graph(from_mx_sym, nnvm_sym)
 
 def test_multi_outputs():
-    def compose(F, arg_name):
+    def compose(F, **kwargs):
         x = F.sym.Variable('x')
         y = F.sym.Variable('y')
-        z = F.sym.split(x, arg_name=3)
+        z = F.sym.split(x, **kwargs)
         return z[0] + z[2] + y
-    mx_sym = compose(mx, 'num_outputs')
+    mx_sym = compose(mx, num_outputs=3)
     from_mx_sym, _ = nnvm.frontend.from_mxnet(mx_sym)
-    nnvm_sym = compose(nnvm, 'indices_or_sections')
+    nnvm_sym = compose(nnvm, indices_or_sections=3)
     compare_graph(from_mx_sym, nnvm_sym)
 
 if __name__ == '__main__':
