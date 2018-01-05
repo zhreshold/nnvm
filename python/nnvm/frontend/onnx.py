@@ -176,7 +176,7 @@ def _scale():
         return inputs[0] * scale
     return _impl
 
-def _abs():
+def _absolute():
     """This is a workaround."""
     def _impl(inputs, attr, params):
         return _sym.relu(inputs[0]) + _sym.relu(_sym.negative(inputs[0]))
@@ -207,8 +207,7 @@ def _prelu():
         channels = _infer_channels(inputs[1], params, False)
         if channels == 1:
             return inputs[0] * inputs[1]
-        else:
-            return _sym.broadcast_mul(inputs[0], inputs[1])
+        return _sym.broadcast_mul(inputs[0], inputs[1])
     return _impl
 
 def _softsign():
@@ -233,7 +232,7 @@ def _pad():
             transforms={
                 'value': 'pad_value',
                 'pads': 'pad_width'},
-            custom_check=lambda attrs : attrs.get('mode') == 'constant')(inputs, attr)
+            custom_check=lambda attrs:attrs.get('mode') == 'constant')(inputs, attr)
     return _impl
 
 # compatible operators that do NOT require any conversion.
@@ -279,7 +278,7 @@ _convert_map = {
     'Mul'           : _elemwise('mul'),
     'Div'           : _elemwise('div'),
     'Neg'           : Renamer('negative'),
-    'Abs'           : _abs(),
+    'Abs'           : _absolute(),
     'Reciprocal'    : _reciprocal(),
     # 'Floor'
     # 'Ceil'
