@@ -233,7 +233,7 @@ def _pad():
             transforms={
                 'value': 'pad_value',
                 'pads': 'pad_width'},
-            custom_check=lambda attr : assert attr.get('mode') == 'constant')(inputs, attr)
+            custom_check=lambda attrs : attrs.get('mode') == 'constant')(inputs, attr)
     return _impl
 
 # compatible operators that do NOT require any conversion.
