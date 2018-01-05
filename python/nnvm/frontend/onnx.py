@@ -212,7 +212,7 @@ def _prelu():
 
 def _softsign():
     def _impl(inputs, attr, params):
-        return inputs[0] / (1 + _abs()(inputs, attr, params))
+        return inputs[0] / (1 + _absolute()(inputs, attr, params))
     return _impl
 
 def _softplus():
@@ -232,7 +232,7 @@ def _pad():
             transforms={
                 'value': 'pad_value',
                 'pads': 'pad_width'},
-            custom_check=lambda attrs:attrs.get('mode') == 'constant')(inputs, attr)
+            custom_check=lambda attrs: attrs.get('mode') == 'constant')(inputs, attr)
     return _impl
 
 # compatible operators that do NOT require any conversion.
